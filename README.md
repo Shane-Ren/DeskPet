@@ -36,7 +36,8 @@
 
 ## 界面预览
 
-> 将截图保存到 `assets/screenshots/` 目录后替换下方路径
+### 桌宠效果展示
+![效果展示](./assets/screenshots/pet-demo.png)
 
 ### 控制面板 — 素材管理
 ![素材管理](./assets/screenshots/materials.png)
@@ -47,8 +48,6 @@
 ### 控制面板 — 定时任务
 ![定时任务](./assets/screenshots/tasks.png)
 
-### 桌宠效果展示
-![效果展示](./assets/screenshots/pet-demo.gif)
 
 ---
 
