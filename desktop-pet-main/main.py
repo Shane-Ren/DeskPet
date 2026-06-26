@@ -1,3 +1,4 @@
+import os
 import platform
 import ctypes
 import queue
@@ -24,9 +25,8 @@ def main():
     scheduler.get_scheduler().start_all()
 
     root = tk.Tk()
-    # 移到屏幕外，不 withdraw（Toplevel 子窗口需要父窗口可见才能正确透明）
-    root.geometry("1x1+10000+10000")
-    root.attributes("-alpha", 0)
+    root.withdraw()
+    root.protocol("WM_DELETE_WINDOW", lambda: None)
 
     q = queue.Queue()
     doll_window._init_queue(q)
@@ -46,7 +46,7 @@ def main():
 def _quit(root):
     scheduler.get_scheduler().stop_all()
     root.quit()
-    sys.exit(0)
+    os._exit(0)
 
 
 if __name__ == "__main__":

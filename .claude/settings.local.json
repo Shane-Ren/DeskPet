@@ -6,7 +6,8 @@
       "Bash(pip install *)",
       "Bash(echo \"Exit code: $?\")",
       "Bash(echo \"Exit: $?\")",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

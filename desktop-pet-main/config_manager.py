@@ -59,11 +59,16 @@ def get_materials_dir() -> Path:
 
 
 def ensure_default_materials():
-    """首次运行将项目根目录下的 gif 复制到 media 目录作为默认素材"""
+    """首次运行将项目根目录（或 assets/gifs/）下的 gif 复制到 media 目录作为默认素材"""
     cfg = load()
     if cfg["materials"]:
         return
-    for gif_path in _project_root().glob("*.gif"):
+    root = _project_root()
+    if getattr(sys, "frozen", False):
+        gif_dir = root / "assets" / "gifs"
+    else:
+        gif_dir = root
+    for gif_path in gif_dir.glob("*.gif"):
         name = gif_path.stem
         _copy_material(str(gif_path), name, "默认")
 

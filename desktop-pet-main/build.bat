@@ -1,6 +1,12 @@
 @echo off
+echo Installing dependencies...
+pip install pyinstaller pystray Pillow tkinterdnd2 -q
 echo Building DesktopPet.exe...
-pip install pyinstaller pystray Pillow -q
-pyinstaller --onefile --noconsole --add-data "assets;assets" --name DesktopPet --icon assets/icon.ico main.py
-echo Done! EXE is in dist/DesktopPet.exe
+pyinstaller --onefile --noconsole ^
+  --add-data "assets;assets" ^
+  --name DesktopPet ^
+  --icon assets/icon.ico ^
+  --distpath dist ^
+  main.py
+echo Done! EXE is at dist/DesktopPet.exe
 pause

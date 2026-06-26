@@ -35,6 +35,7 @@ class TaskScheduler:
 
     def start_task(self, task_id: str):
         self.stop_task(task_id)
+        self._fire_task(task_id)
         self._reschedule(task_id)
 
     def stop_task(self, task_id: str):

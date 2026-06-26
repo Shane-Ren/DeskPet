@@ -1,3 +1,4 @@
+import ctypes
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import uuid
@@ -44,6 +45,16 @@ class ControlPanel:
         self._root.geometry("650x560")
         self._root.minsize(500, 450)
         self._root.protocol("WM_DELETE_WINDOW", self._on_window_close)
+        # 创建后立即隐藏任务栏图标（WS_EX_TOOLWINDOW）
+        self._root.update_idletasks()
+        try:
+            GWL_EXSTYLE = -20
+            WS_EX_TOOLWINDOW = 0x00000080
+            hwnd = self._root.winfo_id()
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_TOOLWINDOW)
+        except Exception:
+            pass
 
         nb = ttk.Notebook(self._root)
         nb.pack(fill="both", expand=True, padx=8, pady=8)
