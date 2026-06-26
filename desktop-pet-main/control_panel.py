@@ -8,7 +8,6 @@ import scheduler
 
 
 class ScrollFrame(ttk.Frame):
-    """可滚动的 Frame，支持鼠标滚轮"""
     def __init__(self, parent, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
@@ -26,7 +25,6 @@ class ScrollFrame(ttk.Frame):
         self._canvas = canvas
 
     def destroy(self):
-        import tkinter as tk
         try:
             self._canvas.bind_all("<MouseWheel>", lambda e: None)
         except Exception:
@@ -39,6 +37,7 @@ class ControlPanel:
         self._on_close = on_close
         self._materials = []
         self._tasks = []
+        self._selected_mat_id = None
 
         self._root = tk.Toplevel(root)
         self._root.title("Desktop Pet - 控制面板")
@@ -54,8 +53,8 @@ class ControlPanel:
         self._settings_scroll = ScrollFrame(nb)
 
         nb.add(self._materials_frame, text="素材管理")
+        nb.add(self._settings_scroll, text="桌宠设置")
         nb.add(self._tasks_frame, text="定时任务")
-        nb.add(self._settings_scroll, text="玩偶设置")
 
         self._build_materials_tab()
         self._build_tasks_tab()
@@ -117,7 +116,6 @@ class ControlPanel:
         if not sel:
             return
         if messagebox.askyesno("确认", "确定删除该素材？"):
-            # 通过名称匹配找到 id
             item = self._mat_tree.item(sel[0])["values"]
             mat_name = item[0]
             for m in config_manager.get_all_materials():
@@ -129,19 +127,21 @@ class ControlPanel:
     def _on_mat_select(self, _):
         sel = self._mat_tree.selection()
         if not sel:
+            self._selected_mat_id = None
+            self._preview_lbl.configure(image="", text="选择素材可预览")
             return
         item = self._mat_tree.item(sel[0])["values"]
         mat_name = item[0]
         for m in config_manager.get_all_materials():
             if m["name"] == mat_name:
+                self._selected_mat_id = m["id"]
                 self._show_preview(m["id"])
                 break
 
     def _show_preview(self, mat_id):
         path = config_manager.get_material_path(mat_id)
         if not path:
-            self._preview_lbl.configure(image="")
-            self._preview_lbl.configure(text="素材不存在")
+            self._preview_lbl.configure(image="", text="素材不存在")
             return
         try:
             from PIL import Image, ImageTk
@@ -167,6 +167,7 @@ class ControlPanel:
         toolbar = ttk.Frame(f)
         toolbar.pack(fill="x", padx=8, pady=(8, 4))
         ttk.Button(toolbar, text="+ 添加任务", command=self._add_task).pack(side="left")
+        ttk.Button(toolbar, text="全部开启", command=self._start_all_tasks).pack(side="left", padx=4)
         ttk.Button(toolbar, text="全部关闭", command=self._stop_all_tasks).pack(side="left", padx=4)
 
         list_frame = ttk.Frame(f)
@@ -176,7 +177,7 @@ class ControlPanel:
         self._task_tree = ttk.Treeview(list_frame, columns=cols, show="headings")
         for col, hdr, w in zip(
             cols,
-            ["名称", "间隔(分钟)", "显示(秒)", "素材", "启用"],
+            ["名称", "间隔(分钟)", "显示(秒)", "素材", "状态"],
             [160, 80, 80, 120, 50],
         ):
             self._task_tree.heading(col, text=hdr)
@@ -190,7 +191,7 @@ class ControlPanel:
         btn_frame.pack(pady=(4, 8))
         ttk.Button(btn_frame, text="编辑", command=self._edit_task).pack(side="left", padx=4)
         ttk.Button(btn_frame, text="删除", command=self._delete_task).pack(side="left", padx=4)
-        ttk.Button(btn_frame, text="立即触发", command=self._trigger_task).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="效果展示", command=self._trigger_task).pack(side="left", padx=4)
 
     def _add_task(self):
         dialog = _TaskDialog(self._root, self._materials)
@@ -231,6 +232,13 @@ class ControlPanel:
         task_id = self._task_tree.item(sel[0])["values"][-1]
         scheduler.get_scheduler().trigger_now(task_id)
 
+    def _start_all_tasks(self):
+        for t in config_manager.get_all_tasks():
+            t["enabled"] = True
+            config_manager.save_task(t)
+            scheduler.get_scheduler().start_task(t["id"])
+        self._refresh_tasks()
+
     def _stop_all_tasks(self):
         scheduler.get_scheduler().stop_all()
         for t in config_manager.get_all_tasks():
@@ -247,7 +255,7 @@ class ControlPanel:
                 if m["id"] == t.get("gif_id"):
                     gif_name = m["name"]
                     break
-            enabled_str = "V" if t.get("enabled") else "X"
+            enabled_str = "已启用" if t.get("enabled") else "已关闭"
             self._task_tree.insert(
                 "",
                 "end",
@@ -287,13 +295,6 @@ class ControlPanel:
             self._save_settings_key("speed", speed_var.get()),
         ))
 
-        size_frame = ttk.LabelFrame(pad, text="窗口大小", padding=8)
-        size_frame.pack(fill="x", pady=(0, 8))
-        size_var = tk.IntVar(value=config_manager.get_pet_settings().get("window_size_px", 128))
-        ttk.Spinbox(size_frame, from_=64, to=512, textvariable=size_var, width=10).pack(anchor="w", pady=4)
-        ttk.Label(size_frame, text="像素（宽高相同，正方形）").pack(anchor="w")
-        size_var.trace_add("write", lambda *_: self._save_settings_key("window_size_px", size_var.get()))
-
         bottom_frame = ttk.LabelFrame(pad, text="距底部距离", padding=8)
         bottom_frame.pack(fill="x", pady=(0, 8))
         ttk.Label(bottom_frame, text="玩偶距屏幕下边界的像素距离（避开任务栏）").pack(anchor="w")
@@ -312,24 +313,11 @@ class ControlPanel:
         ttk.Checkbutton(top_frame, text="窗口置顶（始终在其它窗口上方）", variable=top_var).pack(anchor="w")
         top_var.trace_add("write", lambda *_: self._save_settings_key("is_always_on_top", top_var.get()))
 
-        ttk.Separator(pad).pack(fill="x", pady=4)
-        ttk.Button(pad, text="测试：立即弹出玩偶", command=self._test_doll).pack(pady=8)
 
     def _save_settings_key(self, key, value):
         settings = config_manager.get_pet_settings()
         settings[key] = value
         config_manager.save_pet_settings(settings)
-
-    def _test_doll(self):
-        mats = config_manager.get_all_materials()
-        if not mats:
-            messagebox.showinfo("提示", "请先上传一个 GIF 素材")
-            return
-        path = config_manager.get_material_path(mats[0]["id"])
-        if path:
-            import doll_window
-            settings = config_manager.get_pet_settings()
-            doll_window.run_doll(path, 5, settings)
 
 
 # ─── 对话框 ─────────────────────────────────────────────────
@@ -342,7 +330,12 @@ class _NewMaterialDialog:
         win.title("添加素材")
         win.geometry("320x180")
         win.resizable(False, False)
+        win.transient(parent)
         win.grab_set()
+        win.update_idletasks()
+        cx = parent.winfo_x() + (parent.winfo_width() - win.winfo_width()) // 2
+        cy = parent.winfo_y() + 40
+        win.geometry(f"+{cx}+{cy}")
         self._win = win
 
         ttk.Label(win, text="名称：").place(x=20, y=20)
@@ -360,7 +353,6 @@ class _NewMaterialDialog:
 
         ttk.Button(win, text="确定", command=ok).place(x=80, y=120, width=70)
         ttk.Button(win, text="取消", command=win.destroy).place(x=160, y=120, width=70)
-        win.transient(parent)
         win.wait_window()
 
 
@@ -374,64 +366,215 @@ class _TaskDialog:
             "gif_id": "",
             "duration_seconds": 8,
             "enabled": True,
+            "scale_percent": 1,
         }
         win = tk.Toplevel(parent)
         win.title("编辑任务" if task else "新建任务")
-        win.geometry("380x300")
+        win.geometry("440x640")
         win.resizable(False, False)
+        win.transient(parent)
         win.grab_set()
+        win.update_idletasks()
+        cx = parent.winfo_x() + (parent.winfo_width() - 440) // 2
+        cy = parent.winfo_y() + 40
+        win.geometry(f"+{cx}+{cy}")
 
-        f = ttk.Frame(win, padding=16)
+        f = ttk.Frame(win, padding=12)
         f.pack(fill="both", expand=True)
 
-        ttk.Label(f, text="任务名称：").grid(row=0, column=0, sticky="w", pady=6)
+        # 三层叠加预览画布参数
+        PW, PH = 260, 240
+        SIZES = [
+            (3, "#4CAF50", "∗3", 220),
+            (2, "#2196F3", "∗2", 150),
+            (1, "#F44336", "∗1",  80),
+        ]
+
+        def _draw_boxes(canvas):
+            canvas.delete("box")
+            cx, cy = PW // 2, PH // 2
+            for mult, color, label, px in SIZES:
+                x0 = cx - px // 2
+                y0 = cy - px // 2
+                canvas.create_rectangle(x0, y0, x0 + px, y0 + px,
+                    outline=color, width=2, tags="box")
+                canvas.create_text(x0 + px - 3, y0 + px - 3, text=label,
+                    font=("Arial", 10, "bold"), fill=color, anchor="se", tags="box")
+
+        def _load_img_for_canvas(path, target):
+            from PIL import Image as PILImage
+            img = PILImage.open(path).convert("RGBA")
+            img.thumbnail((target, target), PILImage.LANCZOS)
+            # 拉伸到 target×target，白底
+            img = img.resize((target, target), PILImage.LANCZOS)
+            bg = PILImage.new("RGBA", (target, target), (255, 255, 255, 255))
+            return PILImage.alpha_composite(bg, img).convert("RGB")
+
+        # ── 表单字段 ──────────────────────────────────────────
+        ttk.Label(f, text="任务名称：").grid(row=0, column=0, sticky="w", pady=5, padx=(12, 0))
         name_var = tk.StringVar(value=self._task["name"])
-        ttk.Entry(f, textvariable=name_var, width=24).grid(row=0, column=1, sticky="w", pady=6)
+        ttk.Entry(f, textvariable=name_var, width=24).grid(row=0, column=1, sticky="w", pady=5)
 
-        ttk.Label(f, text="提醒间隔(分钟)：").grid(row=1, column=0, sticky="w", pady=6)
+        ttk.Label(f, text="提醒间隔(分钟)：").grid(row=1, column=0, sticky="w", pady=5, padx=(12, 0))
         interval_var = tk.IntVar(value=self._task["interval_minutes"])
-        ttk.Spinbox(f, from_=1, to=999, textvariable=interval_var, width=8).grid(row=1, column=1, sticky="w", pady=6)
+        ttk.Spinbox(f, from_=1, to=999, textvariable=interval_var, width=8).grid(row=1, column=1, sticky="w", pady=5)
 
-        ttk.Label(f, text="显示时长(秒)：").grid(row=2, column=0, sticky="w", pady=6)
+        ttk.Label(f, text="显示时长(秒)：").grid(row=2, column=0, sticky="w", pady=5, padx=(12, 0))
         dur_var = tk.IntVar(value=self._task["duration_seconds"])
-        ttk.Spinbox(f, from_=1, to=300, textvariable=dur_var, width=8).grid(row=2, column=1, sticky="w", pady=6)
+        ttk.Spinbox(f, from_=1, to=300, textvariable=dur_var, width=8).grid(row=2, column=1, sticky="w", pady=5)
 
-        ttk.Label(f, text="绑定素材：").grid(row=3, column=0, sticky="w", pady=6)
+        ttk.Label(f, text="分类筛选：").grid(row=3, column=0, sticky="w", pady=5, padx=(12, 0))
+        categories = ["全部"] + sorted(set(m["category"] for m in materials))
+        cat_var = tk.StringVar(value="全部")
+        cat_combo = ttk.Combobox(f, textvariable=cat_var, values=categories,
+                                   state="readonly", width=10)
+        cat_combo.grid(row=3, column=1, sticky="w", pady=5)
+
+        ttk.Label(f, text="绑定素材：").grid(row=4, column=0, sticky="w", pady=5, padx=(12, 0))
         gif_names = [m["name"] for m in materials]
-        gif_ids = [m["id"] for m in materials]
-        gif_var = tk.StringVar()
-        gif_combo = ttk.Combobox(f, textvariable=gif_var, values=gif_names, state="readonly", width=22)
-        gif_combo.grid(row=3, column=1, sticky="w", pady=6)
+        gif_ids   = [m["id"]  for m in materials]
+        gif_var   = tk.StringVar()
+        gif_combo = ttk.Combobox(f, textvariable=gif_var, values=gif_names,
+                                   state="readonly", width=22)
+        gif_combo.grid(row=4, column=1, sticky="w", pady=5)
         for i, m in enumerate(materials):
             if m["id"] == self._task.get("gif_id"):
                 gif_combo.current(i)
                 break
 
+        ttk.Label(f, text="缩放倍数：").grid(row=5, column=0, sticky="w", pady=5, padx=(12, 0))
+        scale_var = tk.IntVar(value=int(self._task.get("scale_percent", 1) * 100))
+        scale_row = ttk.Frame(f)
+        scale_row.grid(row=5, column=1, sticky="w", pady=5)
+        ttk.Scale(scale_row, from_=10, to=400, orient="h", length=180,
+                   variable=scale_var).pack(side="left")
+        scale_lbl = ttk.Label(scale_row, text="1.0x")
+        scale_lbl.pack(side="left", padx=4)
+
+        # ── 三层叠加预览区 ────────────────────────────────────
+        ttk.Label(f, text="尺寸对比（∗3外框/∗2中框/∗1小框）：").grid(
+            row=6, column=0, columnspan=2, sticky="w", pady=(6, 2), padx=(12, 0))
+
+        pc = tk.Canvas(f, width=PW, height=PH,
+                        bg="#f5f5f5", highlightthickness=1, highlightbackground="#cccccc")
+        pc.grid(row=7, column=0, columnspan=2, pady=4)
+        _draw_boxes(pc)
+
+        pc_img_ref = [None]   # 防止 PhotoImage 被 GC
+
+        # 缓存原始 GIF 尺寸（避免重复读取文件）
+        _orig_size = [None]
+
+        def update_previews(*_):
+            val = scale_var.get()
+            scale_lbl.configure(text=f"{val/100:.1f}x")
+            sel = gif_combo.current()
+            pc.delete("gif")
+            pc.delete("highlight")
+            if sel < 0 or not gif_ids:
+                return
+            path = config_manager.get_material_path(gif_ids[sel])
+            if not path:
+                return
+            # 获取原始尺寸（只读一次）
+            if _orig_size[0] is None:
+                from PIL import Image as PILImage
+                _orig_size[0] = PILImage.open(path).convert("RGBA").size
+            w0, h0 = _orig_size[0]
+            scale = val / 100.0
+            # 按缩放倍数计算实际像素尺寸，限制在 10~240px 之间
+            tw = max(10, min(int(w0 * scale), 240))
+            th = max(10, min(int(h0 * scale), 240))
+            # 加载并缩放 GIF（填满 tw×th 区域）
+            img = _load_img_for_canvas(path, max(tw, th))
+            # 裁剪/缩放为目标尺寸 tw × th
+            from PIL import Image as PILImage
+            img = img.resize((tw, th), PILImage.LANCZOS)
+            from PIL import ImageTk as PILImageTk
+            ph = PILImageTk.PhotoImage(img)
+            pc_img_ref[0] = ph
+            pc.create_image(PW // 2, PH // 2, image=ph, tags="gif")
+            # 高亮最接近当前缩放的框
+            closest = min(SIZES, key=lambda s: abs(val / 100.0 - s[0]))
+            _, color, label, px = closest
+            x0 = PW // 2 - px // 2
+            y0 = PH // 2 - px // 2
+            pc.create_rectangle(x0 - 3, y0 - 3, x0 + px + 3, y0 + px + 3,
+                                outline="#ff9800", width=3, tags="highlight")
+
+        # ── 分类切换 ─────────────────────────────────────────
+        def on_cat_change(*_):
+            _orig_size[0] = None
+            sel_cat = cat_var.get()
+            if sel_cat == "全部":
+                opts = [m["name"] for m in materials]
+                ids  = [m["id"]  for m in materials]
+            else:
+                opts = [m["name"] for m in materials if m["category"] == sel_cat]
+                ids  = [m["id"]  for m in materials if m["category"] == sel_cat]
+            gif_combo.configure(values=opts)
+            gif_names[:] = opts
+            gif_ids[:]   = ids
+            if opts:
+                gif_combo.current(0)
+                update_previews()
+            else:
+                gif_combo.set("")
+                pc.delete("gif")
+        cat_var.trace_add("write", on_cat_change)
+
+        # ── 拖拽 GIF ─────────────────────────────────────────
+        def _load_dropped(path_str):
+            path = (path_str or "").strip().strip('"').strip("{").strip("}").split()[0]
+            if path and path.lower().endswith(".gif"):
+                try:
+                    from PIL import ImageTk as PILImageTk
+                    target = SIZES[2][3] - 8
+                    img = _load_img_for_canvas(path, target)
+                    ph = PILImageTk.PhotoImage(img)
+                    pc_img_ref[0] = ph
+                    pc.delete("gif")
+                    pc.create_image(PW // 2, PH // 2, image=ph, tags="gif")
+                except Exception:
+                    pass
+
+        try:
+            from tkinterdnd2 import DND_FILES
+            pc.drop_target_register(DND_FILES)
+            pc.dnd_bind("<<Drop>>", lambda e: _load_dropped(e.data))
+        except Exception:
+            pass
+
+        # ── 启用 + 按钮 ──────────────────────────────────────
         enabled_var = tk.BooleanVar(value=self._task.get("enabled", True))
         ttk.Checkbutton(f, text="创建后立即启用", variable=enabled_var).grid(
-            row=4, column=0, columnspan=2, sticky="w", pady=6
-        )
+            row=8, column=0, columnspan=2, sticky="w", pady=5, padx=(12, 0))
 
         def ok():
             sel = gif_combo.current()
-            gif_id = gif_ids[sel] if sel >= 0 else ""
+            gid = gif_ids[sel] if sel >= 0 else ""
             if not name_var.get().strip():
                 messagebox.showwarning("提示", "请输入任务名称")
                 return
-            if not gif_id:
+            if not gid:
                 messagebox.showwarning("提示", "请选择素材")
                 return
-            self._task["name"] = name_var.get().strip()
+            self._task["name"]            = name_var.get().strip()
             self._task["interval_minutes"] = interval_var.get()
-            self._task["duration_seconds"] = dur_var.get()
-            self._task["gif_id"] = gif_id
-            self._task["enabled"] = enabled_var.get()
+            self._task["duration_seconds"]  = dur_var.get()
+            self._task["gif_id"]           = gid
+            self._task["enabled"]          = enabled_var.get()
+            self._task["scale_percent"]    = scale_var.get() / 100.0
             self.result = self._task
             win.destroy()
 
         btn_f = ttk.Frame(f)
-        btn_f.grid(row=5, column=0, columnspan=2, pady=12)
+        btn_f.grid(row=9, column=0, columnspan=2, pady=10)
         ttk.Button(btn_f, text="确定", command=ok).pack(side="left", padx=8)
         ttk.Button(btn_f, text="取消", command=win.destroy).pack(side="left")
-        win.transient(parent)
+
+        gif_combo.bind("<<ComboboxSelected>>", lambda _: (_orig_size.__setitem__(0, None), update_previews()))
+        scale_var.trace_add("write", update_previews)
+        update_previews()
+
         win.wait_window()

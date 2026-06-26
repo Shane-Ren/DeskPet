@@ -8,12 +8,18 @@ class TaskScheduler:
         self._timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
 
+    def _build_settings(self, task: dict) -> dict:
+        """合并全局设置与任务缩放比例"""
+        settings = config_manager.get_pet_settings().copy()
+        settings["scale_percent"] = task.get("scale_percent", 1)
+        return settings
+
     def _fire_task(self, task_id: str):
         task = config_manager.get_task(task_id)
         if task and task.get("enabled"):
             gif_path = config_manager.get_material_path(task["gif_id"])
             if gif_path:
-                settings = config_manager.get_pet_settings()
+                settings = self._build_settings(task)
                 doll_window.run_doll(gif_path, task["duration_seconds"], settings)
         self._reschedule(task_id)
 
@@ -59,7 +65,7 @@ class TaskScheduler:
         if task:
             gif_path = config_manager.get_material_path(task["gif_id"])
             if gif_path:
-                settings = config_manager.get_pet_settings()
+                settings = self._build_settings(task)
                 doll_window.run_doll(gif_path, task["duration_seconds"], settings)
 
 

@@ -19,15 +19,22 @@ def run_doll(gif_path: str, duration_sec: float, settings: dict):
     t.start()
 
 
-def _load_gif_frames(gif_path: str, target_size: int) -> list:
-    """用 PIL 加载 GIF 每一帧，缩放到 target_size，白色背景，完美透明"""
+def _load_gif_frames(gif_path: str, scale_percent: int) -> tuple[list, int, int]:
+    """用 PIL 加载 GIF 每一帧，白色背景，按比例缩放，返回 (帧列表, 缩放后宽, 缩放后高)"""
     frames = []
     try:
         gif = Image.open(gif_path)
+        w, h = gif.size
+        # scale_percent 直接是倍数（1=原始大小，2=2倍，0.5=一半）
+        if scale_percent != 1:
+            new_w = int(w * scale_percent)
+            new_h = int(h * scale_percent)
+        else:
+            new_w, new_h = w, h
         while True:
             frame = gif.copy().convert("RGBA")
-            if frame.size != (target_size, target_size):
-                frame = frame.resize((target_size, target_size), Image.LANCZOS)
+            if scale_percent != 1:
+                frame = frame.resize((new_w, new_h), Image.LANCZOS)
             bg = Image.new("RGBA", frame.size, (255, 255, 255, 255))
             composite = Image.alpha_composite(bg, frame)
             tk_img = ImageTk.PhotoImage(composite.convert("RGB"))
@@ -35,7 +42,7 @@ def _load_gif_frames(gif_path: str, target_size: int) -> list:
             gif.seek(gif.tell() + 1)
     except EOFError:
         pass
-    return frames
+    return frames, new_w, new_h
 
 
 def _doll_thread(gif_path: str, duration_sec: float, settings: dict):
@@ -54,13 +61,16 @@ def process_doll_queue(root: tk.Tk):
 
 
 def _create_doll_window(root: tk.Tk, gif_path: str, duration_sec: float, settings: dict):
-    size = settings.get("window_size_px", 128)
     speed = settings.get("speed", 10)
     travel_distance = settings.get("travel_distance", 500)
     is_topmost = settings.get("is_always_on_top", True)
     bottom_margin = settings.get("bottom_margin", 45)
+    scale_percent = settings.get("scale_percent", 100)
 
-    frames = _load_gif_frames(gif_path, size)
+    result = _load_gif_frames(gif_path, scale_percent)
+    if not result:
+        return
+    frames, w, h = result
     if not frames:
         return
 
@@ -74,9 +84,8 @@ def _create_doll_window(root: tk.Tk, gif_path: str, duration_sec: float, setting
     label.pack()
     label.configure(image=frames[0])
 
-    # 使用负坐标语法 -x-y，直接锚定屏幕右下角
-    # -x 表示距右边缘距离，-y 表示距底部距离
-    x_offset = [0]  # 距右边缘的偏移
+    # 使用负坐标语法 -x-y，锚定屏幕右下角
+    x_offset = [0]
     direction = [1]  # 1=向左移(offset增大)，-1=向右移(offset减小)
 
     frame_index = [0]
@@ -86,7 +95,6 @@ def _create_doll_window(root: tk.Tk, gif_path: str, duration_sec: float, setting
         if time.time() > timestamp[0] + 0.06:
             timestamp[0] = time.time()
             frame_index[0] = (frame_index[0] + 1) % len(frames)
-
         x_offset[0] += direction[0]
         if x_offset[0] >= travel_distance:
             x_offset[0] = travel_distance
@@ -94,14 +102,11 @@ def _create_doll_window(root: tk.Tk, gif_path: str, duration_sec: float, setting
         elif x_offset[0] <= 0:
             x_offset[0] = 0
             direction[0] = 1
-
         label.configure(image=frames[frame_index[0]])
-        # -x-y 语法：距右边缘 x_offset，距底部 bottom_margin
-        doll.geometry(f"{size}x{size}-{x_offset[0]}-{bottom_margin}")
+        doll.geometry(f"{w}x{h}-{x_offset[0]}-{bottom_margin}")
         doll.after(speed, update)
 
-    # 初始位置：紧贴右下角
-    doll.geometry(f"{size}x{size}-0-{bottom_margin}")
+    doll.geometry(f"{w}x{h}-0-{bottom_margin}")
     doll.after(0, update)
     _active_windows.append(doll)
 

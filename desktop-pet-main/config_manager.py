@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 import threading
 import uuid
 from pathlib import Path
@@ -8,19 +9,14 @@ from pathlib import Path
 CONFIG_DIR = Path(os.environ["APPDATA"]) / "desktop-pet"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 MEDIA_DIR = CONFIG_DIR / "media"
-ASSETS_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "assets"
 _lock = threading.Lock()
 
 
-def resource_path(relative_path: str) -> Path:
+def _project_root() -> Path:
     if getattr(sys, "frozen", False):
-        base = Path(sys._MEIPASS)
-    else:
-        base = Path(os.path.dirname(os.path.abspath(__file__)))
-    return base / relative_path
+        return Path(sys._MEIPASS)
+    return Path(os.path.dirname(os.path.abspath(__file__)))
 
-
-import sys
 
 DEFAULT_CONFIG = {
     "version": 1,
@@ -29,7 +25,6 @@ DEFAULT_CONFIG = {
         "travel_distance": 500,
         "speed": 10,
         "is_always_on_top": True,
-        "window_size_px": 128,
         "bottom_margin": 45,
     },
     "tasks": [],
@@ -64,16 +59,20 @@ def get_materials_dir() -> Path:
 
 
 def ensure_default_materials():
-    """首次运行将 assets 目录下的 gif 复制到 media 目录作为默认素材"""
+    """首次运行将项目根目录下的 gif 复制到 media 目录作为默认素材"""
     cfg = load()
     if cfg["materials"]:
         return
-    default_gifs = list(ASSETS_DIR.glob("*.gif"))
-    for gif_path in default_gifs:
-        add_material(str(gif_path), gif_path.stem, "默认")
+    for gif_path in _project_root().glob("*.gif"):
+        name = gif_path.stem
+        _copy_material(str(gif_path), name, "默认")
 
 
 def add_material(src_path: str, name: str, category: str) -> dict:
+    return _copy_material(src_path, name, category)
+
+
+def _copy_material(src_path: str, name: str, category: str) -> dict:
     mat_id = str(uuid.uuid4())[:8]
     dest = get_materials_dir() / f"{mat_id}.gif"
     shutil.copy2(src_path, dest)

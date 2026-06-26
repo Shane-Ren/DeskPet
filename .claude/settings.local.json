@@ -5,7 +5,8 @@
       "Bash(python *)",
       "Bash(pip install *)",
       "Bash(echo \"Exit code: $?\")",
-      "Bash(echo \"Exit: $?\")"
+      "Bash(echo \"Exit: $?\")",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }
